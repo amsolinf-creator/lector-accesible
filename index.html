@@ -267,7 +267,9 @@
 <p class="subtitle">Cargá un PDF y escuchalo leído en voz alta, despacio y en español argentino.</p>
 
 <div class="voice-card" id="voice-card" aria-live="polite">
-  <strong id="vc-title">Voz natural argentina</strong>
+  <strong id="vc-title">Voz natural</strong>
+  <label for="vc-voice" style="display:block;margin:6px 0 4px;color:#C9C3B4;font-size:15px">Elegí la voz</label>
+  <select id="vc-voice" aria-label="Elegir voz natural" style="margin-bottom:12px"></select>
   <p id="vc-text">Comprobando…</p>
   <progress id="vc-progress" class="hidden" max="100" value="0" aria-label="Progreso de la descarga"></progress>
   <button class="small-btn" id="vc-btn" type="button">Descargar voz natural</button>
@@ -321,7 +323,7 @@
   <div class="speed-block" id="engine-block">
     <div class="speed-label"><span>Tipo de voz</span></div>
     <select id="engine-select" aria-label="Tipo de voz">
-      <option value="natural">Natural argentina (Daniela)</option>
+      <option value="natural">Natural (la elegida arriba)</option>
       <option value="system">Del sistema (más rápida)</option>
     </select>
   </div>
@@ -362,6 +364,7 @@ const vcText = document.getElementById('vc-text');
 const vcProgress = document.getElementById('vc-progress');
 const vcBtn = document.getElementById('vc-btn');
 const vcRemove = document.getElementById('vc-remove');
+const vcVoice = document.getElementById('vc-voice');
 const thinkingText = document.getElementById('thinking-text');
 const diagText = document.getElementById('diag-text');
 const engineSelect = document.getElementById('engine-select');
@@ -497,7 +500,23 @@ voiceSelect.addEventListener('change', ()=>{
 
 
 /* ===================== Motor Piper (voz natural) ===================== */
-const PIPER_VOICE_ID = 'es_AR-daniela-high';
+const VOICES = [
+  { id:'es_AR-daniela-high',  name:'Daniela (argentina)',         note:'la más natural, pero la más pesada' },
+  { id:'es_MX-ald-medium',    name:'Mexicana (ald)',              note:'intermedia · 63 MB' },
+  { id:'es_ES-mls_10246-low', name:'España (mls_10246)',          note:'liviana · 22 MB' }
+];
+let piperVoiceId = VOICES[0].id;
+try{
+  const saved = localStorage.getItem('lector-piper-voz');
+  if(saved && VOICES.some(v => v.id === saved)) piperVoiceId = saved;
+}catch(e){}
+function voiceName(id){ const v = VOICES.find(x => x.id === id); return v ? v.name : id; }
+VOICES.forEach(v=>{
+  const o = document.createElement('option');
+  o.value = v.id; o.textContent = v.name + ' — ' + v.note;
+  vcVoice.appendChild(o);
+});
+vcVoice.value = piperVoiceId;
 const VENDOR = new URL('vendor/', location.href).href;
 const WASM_PATHS = {
   onnxWasm: VENDOR + 'ort/',
@@ -529,6 +548,7 @@ function piperReady(){ return piper.state === 'ready' && piper.session; }
 function setVoiceUI(state, extra){
   piper.state = state;
   voiceCard.classList.toggle('ready', state === 'ready');
+  vcVoice.disabled = (state === 'downloading' || state === 'loading');
   vcProgress.classList.add('hidden');
   vcBtn.classList.add('hidden');
   vcRemove.classList.add('hidden');
@@ -536,7 +556,7 @@ function setVoiceUI(state, extra){
     vcText.textContent = 'Este dispositivo o navegador no permite la voz natural. Se usará la voz básica del sistema.';
   }else if(state === 'idle'){
     vcText.textContent = 'Se descarga una sola vez y queda guardada en este dispositivo. Es un archivo grande: te recomendamos usar Wi-Fi.';
-    vcBtn.textContent = 'Descargar voz natural';
+    vcBtn.textContent = 'Descargar esta voz';
     vcBtn.classList.remove('hidden');
   }else if(state === 'downloading'){
     vcText.textContent = extra || 'Descargando la voz… No cierres esta página.';
@@ -544,7 +564,7 @@ function setVoiceUI(state, extra){
   }else if(state === 'loading'){
     vcText.textContent = 'Preparando la voz, un momento…';
   }else if(state === 'ready'){
-    vcText.textContent = 'Voz natural lista ✓ Funciona sin gastar datos.';
+    vcText.textContent = 'Voz «' + voiceName(piperVoiceId) + '» lista ✓ Funciona sin gastar datos.';
     vcRemove.classList.remove('hidden');
   }else if(state === 'error'){
     vcText.textContent = 'No se pudo preparar la voz natural. Mientras tanto se usa la voz básica del sistema.';
@@ -574,11 +594,11 @@ async function startPiper(){
   if(!piperSupported()){ setVoiceUI('unsupported'); return; }
   if(['downloading','loading','ready'].includes(piper.state)) return;
   try{
-    const already = (await PiperEngine.stored()).includes(PIPER_VOICE_ID);
+    const already = (await PiperEngine.stored()).includes(piperVoiceId);
     lastAnnouncedPct = -1;
     setVoiceUI(already ? 'loading' : 'downloading');
     piper.session = await PiperEngine.TtsSession.create({
-      voiceId: PIPER_VOICE_ID,
+      voiceId: piperVoiceId,
       wasmPaths: WASM_PATHS,
       progress: onPiperProgress
     });
@@ -597,12 +617,34 @@ async function startPiper(){
 
 vcBtn.addEventListener('click', startPiper);
 vcRemove.addEventListener('click', async ()=>{
-  try{ await caches.delete('piper-voices-v1'); }catch(e){}
-  PiperEngine.TtsSession._instance = null;
-  piper.session = null;
-  audioCache.clear();
+  try{ await PiperEngine.remove(piperVoiceId); }catch(e){ console.error(e); }
+  resetPiperSession();
   setVoiceUI('idle');
   announce('Voz eliminada de este dispositivo.');
+});
+
+function resetPiperSession(){
+  PiperEngine.TtsSession._instance = null;
+  piper.session = null;
+  docGen++;
+  for(const [, p] of audioCache){ p.then(u => URL.revokeObjectURL(u)).catch(()=>{}); }
+  audioCache.clear();
+  synthMs.clear();
+  diagText.textContent = '';
+}
+
+vcVoice.addEventListener('change', async ()=>{
+  piperVoiceId = vcVoice.value;
+  try{ localStorage.setItem('lector-piper-voz', piperVoiceId); }catch(e){}
+  if(isPlaying){ isPlaying = false; updatePlayButton(); }
+  stopAllAudio();
+  resetPiperSession();
+  piper.state = 'idle';
+  try{
+    const stored = await PiperEngine.stored();
+    if(stored.includes(piperVoiceId)){ startPiper(); } else { setVoiceUI('idle'); }
+  }catch(e){ setVoiceUI('idle'); }
+  announce('Voz elegida: ' + voiceName(piperVoiceId) + '.');
 });
 
 // Al abrir: si la voz ya estaba descargada, se prepara sola. Si no, se ofrece descargarla.
@@ -610,7 +652,7 @@ vcRemove.addEventListener('click', async ()=>{
   if(!piperSupported()){ setVoiceUI('unsupported'); return; }
   try{
     const stored = await PiperEngine.stored();
-    if(stored.includes(PIPER_VOICE_ID)){ startPiper(); }
+    if(stored.includes(piperVoiceId)){ startPiper(); }
     else{ setVoiceUI('idle'); }
   }catch(e){ setVoiceUI('idle'); }
 })();
@@ -681,7 +723,7 @@ async function speakWithPiper(token){
   audio.onloadedmetadata = ()=>{
     const ms = synthMs.get(myIndex);
     if(ms && isFinite(audio.duration) && audio.duration > 0){
-      const msg = 'Voz natural: generar esta oración tardó ' + (ms/1000).toFixed(1) + ' s y dura ' + audio.duration.toFixed(1) + ' s.';
+      const msg = 'Voz ' + voiceName(piperVoiceId) + ': generar esta oración tardó ' + (ms/1000).toFixed(1) + ' s y dura ' + audio.duration.toFixed(1) + ' s.';
       diagText.textContent = msg;
       console.log(msg);
     }
