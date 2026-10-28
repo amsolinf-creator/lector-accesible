@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="es-AR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0B0E14">
+<title>Lector Accesible</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="vendor/piper-bundle.js"></script>
+<style>
+  :root{
+    --bg:#0B0E14;
+    --surface:#161B26;
+    --border:#2A3142;
+    --text:#F7F4ED;
+    --accent:#FFB100;
+    --accent-text:#1A1300;
+    --active:#5FD3A4;
+    --danger:#FF6B6B;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:'Atkinson Hyperlegible', system-ui, sans-serif;
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding:24px 16px 48px;
+  }
+  h1{
+    font-size:clamp(24px,6vw,32px);
+    margin:8px 0 4px;
+    text-align:center;
+  }
+  .subtitle{
+    color:#B9B3A4;
+    font-size:18px;
+    text-align:center;
+    margin:0 0 28px;
+    max-width:480px;
+  }
+  .screen{
+    width:100%;
+    max-width:480px;
+    display:flex;
+    flex-direction:column;
+    gap:18px;
+  }
+  .hidden{display:none !important;}
+
+  /* Pantalla 1: carga */
+  .upload-box{
+    border:3px dashed var(--border);
+    border-radius:20px;
+    padding:40px 20px;
+    text-align:center;
+    background:var(--surface);
+  }
+  .big-button{
+    width:100%;
+    min-height:72px;
+    font-size:22px;
+    font-weight:700;
+    font-family:inherit;
+    background:var(--accent);
+    color:var(--accent-text);
+    border:none;
+    border-radius:16px;
+    cursor:pointer;
+    padding:16px;
+  }
+  .big-button:hover{filter:brightness(1.08);}
+  .big-button:focus-visible{
+    outline:4px solid var(--text);
+    outline-offset:3px;
+  }
+  input[type="file"]{display:none;}
+
+  /* Pantalla 2: reproductor */
+  .file-info{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:14px 18px;
+    font-size:16px;
+    color:#C9C3B4;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:10px;
+  }
+  .file-info button{
+    background:none;
+    border:1px solid var(--border);
+    color:var(--text);
+    font-family:inherit;
+    font-size:15px;
+    padding:8px 14px;
+    border-radius:10px;
+    cursor:pointer;
+  }
+  .file-info button:focus-visible{outline:3px solid var(--accent);outline-offset:2px;}
+
+  .sentence-card{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:18px;
+    min-height:140px;
+    padding:26px;
+    font-size:clamp(22px,5vw,28px);
+    line-height:1.5;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+  }
+  .sentence-card.playing{border-color:var(--active);}
+
+  .progress{
+    text-align:center;
+    color:#B9B3A4;
+    font-size:15px;
+  }
+
+  .play-wrap{
+    display:flex;
+    justify-content:center;
+    margin:6px 0;
+    position:relative;
+  }
+  .play-btn{
+    width:120px;
+    height:120px;
+    border-radius:50%;
+    border:none;
+    background:var(--accent);
+    color:var(--accent-text);
+    font-size:42px;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    position:relative;
+    z-index:2;
+  }
+  .play-btn:focus-visible{outline:4px solid var(--text);outline-offset:4px;}
+  .wave{
+    position:absolute;
+    border-radius:50%;
+    border:2px solid var(--active);
+    width:120px;height:120px;
+    opacity:0;
+    z-index:1;
+  }
+  .wave.animate{animation:expand 1.8s ease-out infinite;}
+  @keyframes expand{
+    0%{transform:scale(1);opacity:.5;}
+    100%{transform:scale(1.9);opacity:0;}
+  }
+  @media (prefers-reduced-motion: reduce){
+    .wave.animate{animation:none;opacity:0;}
+  }
+
+  .row-buttons{
+    display:flex;
+    gap:10px;
+  }
+  .ctrl-btn{
+    flex:1;
+    min-height:64px;
+    font-size:17px;
+    font-weight:700;
+    font-family:inherit;
+    background:var(--surface);
+    border:1px solid var(--border);
+    color:var(--text);
+    border-radius:14px;
+    cursor:pointer;
+  }
+  .ctrl-btn:focus-visible{outline:3px solid var(--accent);outline-offset:2px;}
+  .ctrl-btn.stop{color:var(--danger);}
+
+  .speed-block{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:16px 18px;
+  }
+  .speed-label{
+    display:flex;
+    justify-content:space-between;
+    font-size:16px;
+    margin-bottom:8px;
+  }
+  input[type="range"]{
+    width:100%;
+    height:40px;
+  }
+  select{
+    width:100%;
+    font-family:inherit;
+    font-size:16px;
+    background:var(--bg);
+    color:var(--text);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:12px;
+    min-height:48px;
+  }
+  select:focus-visible{outline:3px solid var(--accent);}
+
+  .status{
+    position:absolute;
+    left:-9999px;
+  }
+  .loading-text{
+    text-align:center;
+    font-size:18px;
+    color:#B9B3A4;
+  }
+
+  /* Tarjeta de voz natural */
+  .voice-card{
+    width:100%;
+    max-width:480px;
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:16px 18px;
+    margin:0 0 18px;
+    font-size:16px;
+    line-height:1.45;
+  }
+  .voice-card.ready{border-color:var(--active);}
+  .voice-card strong{display:block;font-size:18px;margin-bottom:4px;}
+  .voice-card p{margin:0 0 10px;color:#C9C3B4;}
+  .voice-card p:last-child{margin-bottom:0;}
+  .voice-card .small-btn{
+    font-family:inherit;font-size:16px;font-weight:700;
+    min-height:52px;width:100%;
+    background:var(--accent);color:var(--accent-text);
+    border:none;border-radius:12px;cursor:pointer;padding:12px;
+  }
+  .voice-card .small-btn.secondary{
+    background:none;color:var(--text);border:1px solid var(--border);
+    font-weight:400;min-height:44px;font-size:15px;
+  }
+  .voice-card .small-btn:focus-visible{outline:3px solid var(--text);outline-offset:3px;}
+  progress{
+    width:100%;height:18px;border-radius:9px;
+    accent-color:var(--accent);margin:4px 0 8px;
+  }
+  .thinking{
+    text-align:center;color:#B9B3A4;font-size:15px;min-height:22px;margin:0;
+  }
+</style>
+</head>
+<body>
+
+<h1>Lector Accesible</h1>
+<p class="subtitle">Cargá un PDF y escuchalo leído en voz alta, despacio y en español argentino.</p>
+
+<div class="voice-card" id="voice-card" aria-live="polite">
+  <strong id="vc-title">Voz natural argentina</strong>
+  <p id="vc-text">Comprobando…</p>
+  <progress id="vc-progress" class="hidden" max="100" value="0" aria-label="Progreso de la descarga"></progress>
+  <button class="small-btn" id="vc-btn" type="button">Descargar voz natural</button>
+  <button class="small-btn secondary hidden" id="vc-remove" type="button" style="margin-top:8px">Quitar voz descargada</button>
+</div>
+
+<div class="screen" id="screen-upload">
+  <div class="upload-box">
+    <p style="margin-top:0;font-size:18px;">Elegí el archivo PDF que querés escuchar.</p>
+    <label for="file-input">
+      <span class="big-button" role="button" tabindex="0" id="upload-trigger">Cargar PDF</span>
+    </label>
+    <input type="file" id="file-input" accept="application/pdf">
+  </div>
+  <p class="loading-text hidden" id="loading-text">Leyendo el documento, un momento...</p>
+</div>
+
+<div class="screen hidden" id="screen-player">
+  <div class="file-info">
+    <span id="file-name">documento.pdf</span>
+    <button id="btn-change-file">Cambiar PDF</button>
+  </div>
+
+  <div class="sentence-card" id="sentence-card">
+    <span id="sentence-text">Presioná reproducir para empezar.</span>
+  </div>
+  <p class="progress" id="progress-text">Oración 0 de 0</p>
+  <p class="thinking" id="thinking-text" aria-hidden="true"></p>
+
+  <div class="play-wrap">
+    <div class="wave" id="wave"></div>
+    <button class="play-btn" id="btn-play" aria-label="Reproducir">▶</button>
+  </div>
+
+  <div class="row-buttons">
+    <button class="ctrl-btn" id="btn-prev">‹ Anterior</button>
+    <button class="ctrl-btn stop" id="btn-stop">Detener</button>
+    <button class="ctrl-btn" id="btn-next">Siguiente ›</button>
+  </div>
+
+  <div class="speed-block">
+    <div class="speed-label">
+      <span>Velocidad de lectura</span>
+      <span id="speed-value">Lenta</span>
+    </div>
+    <input type="range" id="speed-range" min="0.5" max="1.1" step="0.1" value="0.7"
+           aria-label="Velocidad de lectura" aria-valuetext="Lenta">
+  </div>
+
+  <div class="speed-block hidden" id="voice-block">
+    <div class="speed-label"><span>Voz del sistema (respaldo)</span></div>
+    <select id="voice-select" aria-label="Elegir voz"></select>
+  </div>
+</div>
+
+<div class="status" role="status" aria-live="polite" id="status-region"></div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+const screenUpload = document.getElementById('screen-upload');
+const screenPlayer = document.getElementById('screen-player');
+const fileInput = document.getElementById('file-input');
+const uploadTrigger = document.getElementById('upload-trigger');
+const loadingText = document.getElementById('loading-text');
+const fileNameEl = document.getElementById('file-name');
+const sentenceCard = document.getElementById('sentence-card');
+const sentenceText = document.getElementById('sentence-text');
+const progressText = document.getElementById('progress-text');
+const btnPlay = document.getElementById('btn-play');
+const btnPrev = document.getElementById('btn-prev');
+const btnNext = document.getElementById('btn-next');
+const btnStop = document.getElementById('btn-stop');
+const btnChangeFile = document.getElementById('btn-change-file');
+const speedRange = document.getElementById('speed-range');
+const speedValue = document.getElementById('speed-value');
+const voiceBlock = document.getElementById('voice-block');
+const voiceSelect = document.getElementById('voice-select');
+const waveEl = document.getElementById('wave');
+const statusRegion = document.getElementById('status-region');
+const voiceCard = document.getElementById('voice-card');
+const vcText = document.getElementById('vc-text');
+const vcProgress = document.getElementById('vc-progress');
+const vcBtn = document.getElementById('vc-btn');
+const vcRemove = document.getElementById('vc-remove');
+const thinkingText = document.getElementById('thinking-text');
+
+let sentences = [];
+let currentIndex = 0;
+let isPlaying = false;
+let chosenVoice = null;
+let rate = 0.7;
+
+function announce(msg){
+  statusRegion.textContent = '';
+  setTimeout(()=>{ statusRegion.textContent = msg; }, 30);
+}
+
+// Activar input al click o Enter/espacio en el botón visual
+uploadTrigger.addEventListener('click', ()=> fileInput.click());
+uploadTrigger.addEventListener('keydown', (e)=>{
+  if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); fileInput.click(); }
+});
+
+fileInput.addEventListener('change', async (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  loadingText.classList.remove('hidden');
+  announce('Leyendo el documento, un momento.');
+  try{
+    const text = await extractTextFromPdf(file);
+    sentences = splitIntoSentences(text);
+    if(sentences.length === 0){
+      announce('No se pudo encontrar texto leíble en este PDF.');
+      loadingText.classList.add('hidden');
+      return;
+    }
+    currentIndex = 0;
+    fileNameEl.textContent = file.name;
+    screenUpload.classList.add('hidden');
+    screenPlayer.classList.remove('hidden');
+    loadingText.classList.add('hidden');
+    showSentence(currentIndex);
+    announce('Documento cargado: ' + file.name + '. ' + sentences.length + ' oraciones encontradas. Presioná reproducir para empezar.');
+  }catch(err){
+    console.error(err);
+    loadingText.classList.add('hidden');
+    announce('Hubo un problema al leer el PDF. Probá con otro archivo.');
+  }
+});
+
+async function extractTextFromPdf(file){
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({data: arrayBuffer}).promise;
+  let fullText = '';
+  for(let i = 1; i <= pdf.numPages; i++){
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = content.items.map(it => it.str).join(' ');
+    fullText += pageText + ' ';
+  }
+  return cleanText(fullText);
+}
+
+function cleanText(text){
+  return text
+    // Normaliza caracteres raros (ancho completo, ligaduras, etc.)
+    .normalize('NFKC')
+    // Convierte todos los "guiones bajos disfrazados" en uno común
+    .replace(/[\u2017\u2581\u23AF\u2500-\u257F\uFE4D-\uFE4F\uFF3F]/g, '_')
+    // Cualquier símbolo (que no sea letra, número, punto, ! o ?) repetido 3+ veces,
+    // aunque tenga espacios en el medio: "___", "_ _ _", "---", "***", "===", etc.
+    .replace(/([^\p{L}\p{N}\s.!?])(?:\s*\1){2,}/gu, ' ')
+    // Puntos de relleno (4 o más)
+    .replace(/\.{4,}/g, ' ')
+    // Cualquier guión bajo que haya quedado
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function splitIntoSentences(text){
+  const raw = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [text];
+  return raw
+    .map(s => s.trim())
+    .filter(s => /[\p{L}\p{N}]/u.test(s));
+}
+
+function showSentence(i){
+  sentenceText.textContent = sentences[i];
+  progressText.textContent = 'Oración ' + (i+1) + ' de ' + sentences.length;
+}
+
+function speedLabel(r){
+  if(r <= 0.6) return 'Muy lenta';
+  if(r <= 0.8) return 'Lenta';
+  if(r <= 0.95) return 'Normal';
+  return 'Un poco más rápida';
+}
+
+speedRange.addEventListener('input', ()=>{
+  rate = parseFloat(speedRange.value);
+  const label = speedLabel(rate);
+  speedValue.textContent = label;
+  speedRange.setAttribute('aria-valuetext', label);
+});
+
+function loadVoices(){
+  const voices = speechSynthesis.getVoices().filter(v => v.lang.toLowerCase().startsWith('es'));
+  if(voices.length === 0) return;
+  voiceSelect.innerHTML = '';
+  voices.forEach(v=>{
+    const opt = document.createElement('option');
+    opt.value = v.name;
+    opt.textContent = v.name + ' (' + v.lang + ')';
+    voiceSelect.appendChild(opt);
+  });
+  // Preferir variante rioplatense / latinoamericana si existe
+  const preferred = voices.find(v => v.lang.toLowerCase() === 'es-ar')
+                  || voices.find(v => v.lang.toLowerCase().includes('419'))
+                  || voices[0];
+  chosenVoice = preferred;
+  voiceSelect.value = preferred.name;
+  if(voices.length > 1) voiceBlock.classList.remove('hidden');
+}
+speechSynthesis.addEventListener('voiceschanged', loadVoices);
+loadVoices();
+
+voiceSelect.addEventListener('change', ()=>{
+  const voices = speechSynthesis.getVoices();
+  chosenVoice = voices.find(v => v.name === voiceSelect.value) || chosenVoice;
+});
+
+
+/* ===================== Motor Piper (voz natural) ===================== */
+const PIPER_VOICE_ID = 'es_AR-daniela-high';
+const VENDOR = new URL('vendor/', location.href).href;
+const WASM_PATHS = {
+  onnxWasm: VENDOR + 'ort/',
+  piperData: VENDOR + 'piper_phonemize.data',
+  piperWasm: VENDOR + 'piper_phonemize.wasm'
+};
+const piper = { state:'idle', session:null }; // idle | downloading | loading | ready | error | unsupported
+const audio = new Audio();
+audio.preservesPitch = true;
+audio.webkitPreservesPitch = true;
+const audioCache = new Map();   // índice -> Promise<url del audio>
+let synthChain = Promise.resolve();
+let playToken = 0;
+
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAABErAAABAAgAZGF0YQAAAAA=';
+
+function piperSupported(){
+  return !!(window.PiperEngine && window.WebAssembly && window.caches && window.isSecureContext);
+}
+function piperReady(){ return piper.state === 'ready' && piper.session; }
+
+function setVoiceUI(state, extra){
+  piper.state = state;
+  voiceCard.classList.toggle('ready', state === 'ready');
+  vcProgress.classList.add('hidden');
+  vcBtn.classList.add('hidden');
+  vcRemove.classList.add('hidden');
+  if(state === 'unsupported'){
+    vcText.textContent = 'Este dispositivo o navegador no permite la voz natural. Se usará la voz básica del sistema.';
+  }else if(state === 'idle'){
+    vcText.textContent = 'Se descarga una sola vez y queda guardada en este dispositivo. Es un archivo grande: te recomendamos usar Wi-Fi.';
+    vcBtn.textContent = 'Descargar voz natural';
+    vcBtn.classList.remove('hidden');
+  }else if(state === 'downloading'){
+    vcText.textContent = extra || 'Descargando la voz… No cierres esta página.';
+    vcProgress.classList.remove('hidden');
+  }else if(state === 'loading'){
+    vcText.textContent = 'Preparando la voz, un momento…';
+  }else if(state === 'ready'){
+    vcText.textContent = 'Voz natural lista ✓ Funciona sin gastar datos.';
+    vcRemove.classList.remove('hidden');
+  }else if(state === 'error'){
+    vcText.textContent = 'No se pudo preparar la voz natural. Mientras tanto se usa la voz básica del sistema.';
+    vcBtn.textContent = 'Reintentar';
+    vcBtn.classList.remove('hidden');
+  }
+}
+
+let lastAnnouncedPct = -1;
+function onPiperProgress(p){
+  if(!p || !p.url || !p.url.endsWith('.onnx')) return;
+  const mb = (p.loaded / 1048576).toFixed(0);
+  if(p.total > 0){
+    const pct = Math.round(p.loaded * 100 / p.total);
+    vcProgress.value = pct;
+    vcText.textContent = 'Descargando la voz… ' + pct + '% (' + mb + ' MB de ' + (p.total/1048576).toFixed(0) + ' MB). No cierres esta página.';
+    const step = Math.floor(pct / 25) * 25;
+    if(step !== lastAnnouncedPct){ lastAnnouncedPct = step; announce('Descargando la voz: ' + step + ' por ciento.'); }
+    if(p.loaded >= p.total){ vcText.textContent = 'Descarga completa. Preparando la voz…'; }
+  }else{
+    vcProgress.removeAttribute('value');
+    vcText.textContent = 'Descargando la voz… ' + mb + ' MB. No cierres esta página.';
+  }
+}
+
+async function startPiper(){
+  if(!piperSupported()){ setVoiceUI('unsupported'); return; }
+  if(['downloading','loading','ready'].includes(piper.state)) return;
+  try{
+    const already = (await PiperEngine.stored()).includes(PIPER_VOICE_ID);
+    lastAnnouncedPct = -1;
+    setVoiceUI(already ? 'loading' : 'downloading');
+    piper.session = await PiperEngine.TtsSession.create({
+      voiceId: PIPER_VOICE_ID,
+      wasmPaths: WASM_PATHS,
+      progress: onPiperProgress
+    });
+    setVoiceUI('ready');
+    announce('La voz natural está lista.');
+    if(navigator.storage && navigator.storage.persist){ navigator.storage.persist().catch(()=>{}); }
+  }catch(err){
+    console.error('Piper:', err);
+    PiperEngine.TtsSession._instance = null;
+    piper.session = null;
+    setVoiceUI('error');
+    announce('No se pudo preparar la voz natural. Se usará la voz básica.');
+  }
+}
+
+vcBtn.addEventListener('click', startPiper);
+vcRemove.addEventListener('click', async ()=>{
+  try{ await caches.delete('piper-voices-v1'); }catch(e){}
+  PiperEngine.TtsSession._instance = null;
+  piper.session = null;
+  audioCache.clear();
+  setVoiceUI('idle');
+  announce('Voz eliminada de este dispositivo.');
+});
+
+// Al abrir: si la voz ya estaba descargada, se prepara sola. Si no, se ofrece descargarla.
+(async function initVoiceCard(){
+  if(!piperSupported()){ setVoiceUI('unsupported'); return; }
+  try{
+    const stored = await PiperEngine.stored();
+    if(stored.includes(PIPER_VOICE_ID)){ startPiper(); }
+    else{ setVoiceUI('idle'); }
+  }catch(e){ setVoiceUI('idle'); }
+})();
+
+/* ---- Síntesis con cola (una a la vez) y precarga de la siguiente ---- */
+function getAudioFor(i){
+  if(audioCache.has(i)) return audioCache.get(i);
+  const text = sentences[i];
+  const p = (synthChain = synthChain.then(async ()=>{
+    const blob = await piper.session.predict(text);
+    return URL.createObjectURL(blob);
+  }));
+  audioCache.set(i, p);
+  p.catch(()=> audioCache.delete(i));
+  return p;
+}
+function prefetch(i){
+  for(let k = i; k < Math.min(i + 2, sentences.length); k++){ getAudioFor(k).catch(()=>{}); }
+  // liberar memoria de oraciones ya leídas
+  for(const [idx, p] of audioCache){
+    if(idx < i - 1){ p.then(u => URL.revokeObjectURL(u)).catch(()=>{}); audioCache.delete(idx); }
+  }
+}
+
+function unlockAudio(){
+  // Los celulares (sobre todo iPhone) solo dejan reproducir audio tras un toque del usuario.
+  try{ audio.src = SILENT_WAV; const pr = audio.play(); if(pr && pr.catch) pr.catch(()=>{}); }catch(e){}
+}
+
+async function speakWithPiper(token){
+  showSentence(currentIndex);
+  const myIndex = currentIndex;
+  thinkingText.textContent = audioCache.has(myIndex) ? '' : 'Preparando la lectura…';
+  let url;
+  try{
+    url = await getAudioFor(myIndex);
+  }catch(err){
+    console.error('Síntesis falló, uso voz del sistema:', err);
+    thinkingText.textContent = '';
+    if(token === playToken) speakWithSystem(token);
+    return;
+  }
+  thinkingText.textContent = '';
+  if(token !== playToken || !isPlaying) return;
+  prefetch(myIndex + 1);
+  audio.onended = null;
+  audio.src = url;
+  audio.playbackRate = rate;
+  audio.onended = ()=>{
+    if(token !== playToken || !isPlaying) return;
+    advance(token);
+  };
+  try{ await audio.play(); }
+  catch(err){
+    console.error(err);
+    if(token === playToken){ isPlaying = false; updatePlayButton(); announce('No se pudo reproducir el audio. Tocá reproducir de nuevo.'); }
+  }
+}
+
+/* ---- Respaldo: voz del sistema (la de antes) ---- */
+function speakWithSystem(token){
+  showSentence(currentIndex);
+  speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(
+    sentences[currentIndex].replace(/[_=~*#\-–—─]{2,}/g, ' ').replace(/_/g, ' ')
+  );
+  utter.lang = chosenVoice ? chosenVoice.lang : 'es-AR';
+  if(chosenVoice) utter.voice = chosenVoice;
+  utter.rate = rate;
+  utter.pitch = 1;
+  utter.onend = ()=>{
+    if(token !== playToken || !isPlaying) return;
+    advance(token);
+  };
+  speechSynthesis.speak(utter);
+}
+
+function advance(token){
+  currentIndex++;
+  if(currentIndex < sentences.length){
+    speakCurrent();
+  }else{
+    currentIndex = sentences.length - 1;
+    isPlaying = false;
+    updatePlayButton();
+    announce('Terminó la lectura del documento.');
+  }
+}
+
+function stopAllAudio(){
+  playToken++;
+  speechSynthesis.cancel();
+  audio.onended = null;
+  audio.pause();
+  thinkingText.textContent = '';
+}
+
+function speakCurrent(){
+  stopAllAudio();
+  const token = playToken;
+  if(piperReady()) speakWithPiper(token);
+  else speakWithSystem(token);
+}
+
+function updatePlayButton(){
+  if(isPlaying){
+    btnPlay.textContent = '⏸';
+    btnPlay.setAttribute('aria-label','Pausar');
+    sentenceCard.classList.add('playing');
+    waveEl.classList.add('animate');
+  }else{
+    btnPlay.textContent = '▶';
+    btnPlay.setAttribute('aria-label','Reproducir');
+    sentenceCard.classList.remove('playing');
+    waveEl.classList.remove('animate');
+  }
+}
+
+btnPlay.addEventListener('click', ()=>{
+  if(isPlaying){
+    isPlaying = false;
+    stopAllAudio();
+    updatePlayButton();
+    announce('En pausa.');
+  }else{
+    unlockAudio();
+    isPlaying = true;
+    updatePlayButton();
+    announce('Reproduciendo.');
+    speakCurrent();
+  }
+});
+
+// La velocidad se aplica enseguida a la voz natural
+speedRange.addEventListener('input', ()=>{ audio.playbackRate = rate; });
+
+btnStop.addEventListener('click', ()=>{
+  isPlaying = false;
+  stopAllAudio();
+  currentIndex = 0;
+  showSentence(currentIndex);
+  updatePlayButton();
+  announce('Lectura detenida. Volviste al comienzo.');
+});
+
+btnPrev.addEventListener('click', ()=>{
+  stopAllAudio();
+  currentIndex = Math.max(0, currentIndex - 1);
+  showSentence(currentIndex);
+  announce('Oración anterior.');
+  if(isPlaying) speakCurrent();
+});
+
+btnNext.addEventListener('click', ()=>{
+  stopAllAudio();
+  currentIndex = Math.min(sentences.length - 1, currentIndex + 1);
+  showSentence(currentIndex);
+  announce('Oración siguiente.');
+  if(isPlaying) speakCurrent();
+});
+
+btnChangeFile.addEventListener('click', ()=>{
+  stopAllAudio();
+  audioCache.clear();
+  isPlaying = false;
+  updatePlayButton();
+  sentences = [];
+  currentIndex = 0;
+  fileInput.value = '';
+  screenPlayer.classList.add('hidden');
+  screenUpload.classList.remove('hidden');
+  announce('Listo para cargar un nuevo PDF.');
+});
+
+// Atajos de teclado: espacio = play/pausa, flechas = anterior/siguiente
+document.addEventListener('keydown', (e)=>{
+  if(screenPlayer.classList.contains('hidden')) return;
+  if(e.target.tagName === 'SELECT' || e.target.tagName === 'INPUT') return;
+  if(e.code === 'Space'){ e.preventDefault(); btnPlay.click(); }
+  if(e.code === 'ArrowRight'){ e.preventDefault(); btnNext.click(); }
+  if(e.code === 'ArrowLeft'){ e.preventDefault(); btnPrev.click(); }
+});
+</script>
+</body>
+</html>

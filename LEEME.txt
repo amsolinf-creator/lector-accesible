@@ -1,0 +1,32 @@
+LECTOR ACCESIBLE - versión con voz natural (Piper, voz argentina "Daniela")
+
+CONTENIDO
+  index.html            La página
+  vendor/               Motor de voz y archivos que necesita (no tocar)
+
+IMPORTANTE: no se abre con doble clic. Necesita estar servida por http(s).
+
+PROBAR EN TU COMPUTADORA
+  1. En VS Code, abrí ESTA carpeta (lector-piper).
+  2. Clic derecho en index.html > "Open with Live Server".
+  3. Se abre en http://127.0.0.1:5500. Tocá "Descargar voz natural" (solo la primera vez).
+  4. Cargá un PDF y reproducí.
+
+PROBAR EN EL CELULAR
+  El celular necesita HTTPS, así que hay que subir la carpeta a un hosting gratuito:
+  - Netlify: entrá a app.netlify.com/drop y arrastrá la carpeta completa.
+  - Cloudflare Pages: "Create project" > "Upload assets" y subí la carpeta.
+  - GitHub Pages: subí los archivos a un repositorio y activá Pages.
+  Después abrí el link que te dan desde el celular.
+
+CÓMO FUNCIONA
+  - La voz (archivo es_AR-daniela-high de Piper) se descarga una vez desde huggingface.co
+    y queda guardada en el navegador del dispositivo. No cuenta contra ningún límite tuyo.
+  - Si la voz natural no está lista o falla, la página usa la voz del sistema, como antes.
+  - Todo lo demás (limpieza de rayas, velocidad, atajos) sigue igual.
+
+NOTAS
+  - Hay que tener conexión la primera vez (voz + lector de PDF desde cdnjs).
+  - Revisá la licencia de la voz en su ficha de Hugging Face antes de publicarla ampliamente.
+  - En iPhone, el navegador puede borrar datos de sitios que no se usan en varios días;
+    si pasa, la página vuelve a ofrecer la descarga. Agregarla a la pantalla de inicio ayuda.
