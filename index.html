@@ -296,6 +296,7 @@
   </div>
   <p class="progress" id="progress-text">Oración 0 de 0</p>
   <p class="thinking" id="thinking-text" aria-hidden="true"></p>
+  <p class="thinking" id="diag-text" aria-hidden="true" style="font-size:13px;opacity:.8"></p>
 
   <div class="play-wrap">
     <div class="wave" id="wave"></div>
@@ -315,6 +316,14 @@
     </div>
     <input type="range" id="speed-range" min="0.5" max="1.1" step="0.1" value="0.7"
            aria-label="Velocidad de lectura" aria-valuetext="Lenta">
+  </div>
+
+  <div class="speed-block" id="engine-block">
+    <div class="speed-label"><span>Tipo de voz</span></div>
+    <select id="engine-select" aria-label="Tipo de voz">
+      <option value="natural">Natural argentina (Daniela)</option>
+      <option value="system">Del sistema (más rápida)</option>
+    </select>
   </div>
 
   <div class="speed-block hidden" id="voice-block">
@@ -354,6 +363,8 @@ const vcProgress = document.getElementById('vc-progress');
 const vcBtn = document.getElementById('vc-btn');
 const vcRemove = document.getElementById('vc-remove');
 const thinkingText = document.getElementById('thinking-text');
+const diagText = document.getElementById('diag-text');
+const engineSelect = document.getElementById('engine-select');
 
 let sentences = [];
 let currentIndex = 0;
@@ -385,12 +396,15 @@ fileInput.addEventListener('change', async (e)=>{
       loadingText.classList.add('hidden');
       return;
     }
+    docGen++;
+    audioCache.clear();
     currentIndex = 0;
     fileNameEl.textContent = file.name;
     screenUpload.classList.add('hidden');
     screenPlayer.classList.remove('hidden');
     loadingText.classList.add('hidden');
     showSentence(currentIndex);
+    fillAhead();
     announce('Documento cargado: ' + file.name + '. ' + sentences.length + ' oraciones encontradas. Presioná reproducir para empezar.');
   }catch(err){
     console.error(err);
@@ -497,6 +511,13 @@ audio.webkitPreservesPitch = true;
 const audioCache = new Map();   // índice -> Promise<url del audio>
 let synthChain = Promise.resolve();
 let playToken = 0;
+let docGen = 0;                 // cambia al cargar otro PDF (cancela trabajos viejos)
+let preferSystem = false;       // true = usar siempre la voz del sistema
+const AHEAD = 6;                // cuántas oraciones se preparan por adelantado
+const synthMs = new Map();      // índice -> ms que tardó en generarse
+let hintTimer = null;
+try{ preferSystem = localStorage.getItem('lector-voz') === 'system'; }catch(e){}
+engineSelect.value = preferSystem ? 'system' : 'natural';
 
 const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAABErAAABAAgAZGF0YQAAAAA=';
 
@@ -563,6 +584,7 @@ async function startPiper(){
     });
     setVoiceUI('ready');
     announce('La voz natural está lista.');
+    if(sentences.length) fillAhead();
     if(navigator.storage && navigator.storage.persist){ navigator.storage.persist().catch(()=>{}); }
   }catch(err){
     console.error('Piper:', err);
@@ -594,22 +616,32 @@ vcRemove.addEventListener('click', async ()=>{
 })();
 
 /* ---- Síntesis con cola (una a la vez) y precarga de la siguiente ---- */
+function isWanted(i){ return i >= currentIndex - 1 && i < currentIndex + AHEAD; }
+
 function getAudioFor(i){
   if(audioCache.has(i)) return audioCache.get(i);
   const text = sentences[i];
-  const p = (synthChain = synthChain.then(async ()=>{
+  const gen = docGen;
+  const p = (synthChain = synthChain.catch(()=>{}).then(async ()=>{
+    if(gen !== docGen || !isWanted(i)) throw new Error('cancelado');
+    const t0 = performance.now();
     const blob = await piper.session.predict(text);
+    synthMs.set(i, performance.now() - t0);
     return URL.createObjectURL(blob);
   }));
   audioCache.set(i, p);
-  p.catch(()=> audioCache.delete(i));
+  p.catch(()=>{ if(audioCache.get(i) === p) audioCache.delete(i); });
   return p;
 }
-function prefetch(i){
-  for(let k = i; k < Math.min(i + 2, sentences.length); k++){ getAudioFor(k).catch(()=>{}); }
-  // liberar memoria de oraciones ya leídas
+
+// Prepara en segundo plano las próximas oraciones y libera las ya leídas
+function fillAhead(){
+  if(!piperReady() || preferSystem || !sentences.length) return;
+  for(let k = currentIndex; k < Math.min(currentIndex + AHEAD, sentences.length); k++){
+    getAudioFor(k).catch(()=>{});
+  }
   for(const [idx, p] of audioCache){
-    if(idx < i - 1){ p.then(u => URL.revokeObjectURL(u)).catch(()=>{}); audioCache.delete(idx); }
+    if(idx < currentIndex - 1){ p.then(u => URL.revokeObjectURL(u)).catch(()=>{}); audioCache.delete(idx); }
   }
 }
 
@@ -621,20 +653,39 @@ function unlockAudio(){
 async function speakWithPiper(token){
   showSentence(currentIndex);
   const myIndex = currentIndex;
-  thinkingText.textContent = audioCache.has(myIndex) ? '' : 'Preparando la lectura…';
+  clearTimeout(hintTimer);
+  const waiting = !audioCache.has(myIndex);
+  thinkingText.textContent = waiting ? 'Preparando la lectura…' : '';
+  if(waiting){
+    hintTimer = setTimeout(()=>{
+      if(token === playToken && thinkingText.textContent){
+        thinkingText.textContent = 'Está tardando. Si querés, elegí «Del sistema» en Tipo de voz.';
+      }
+    }, 7000);
+  }
   let url;
   try{
     url = await getAudioFor(myIndex);
   }catch(err){
     console.error('Síntesis falló, uso voz del sistema:', err);
+    clearTimeout(hintTimer);
     thinkingText.textContent = '';
     if(token === playToken) speakWithSystem(token);
     return;
   }
+  clearTimeout(hintTimer);
   thinkingText.textContent = '';
   if(token !== playToken || !isPlaying) return;
-  prefetch(myIndex + 1);
+  fillAhead();
   audio.onended = null;
+  audio.onloadedmetadata = ()=>{
+    const ms = synthMs.get(myIndex);
+    if(ms && isFinite(audio.duration) && audio.duration > 0){
+      const msg = 'Voz natural: generar esta oración tardó ' + (ms/1000).toFixed(1) + ' s y dura ' + audio.duration.toFixed(1) + ' s.';
+      diagText.textContent = msg;
+      console.log(msg);
+    }
+  };
   audio.src = url;
   audio.playbackRate = rate;
   audio.onended = ()=>{
@@ -689,7 +740,7 @@ function stopAllAudio(){
 function speakCurrent(){
   stopAllAudio();
   const token = playToken;
-  if(piperReady()) speakWithPiper(token);
+  if(piperReady() && !preferSystem) speakWithPiper(token);
   else speakWithSystem(token);
 }
 
@@ -722,6 +773,16 @@ btnPlay.addEventListener('click', ()=>{
   }
 });
 
+engineSelect.addEventListener('change', ()=>{
+  preferSystem = engineSelect.value === 'system';
+  try{ localStorage.setItem('lector-voz', preferSystem ? 'system' : 'natural'); }catch(e){}
+  diagText.textContent = '';
+  thinkingText.textContent = '';
+  if(!preferSystem) fillAhead();
+  if(isPlaying) speakCurrent();
+  announce(preferSystem ? 'Voz del sistema.' : 'Voz natural argentina.');
+});
+
 // La velocidad se aplica enseguida a la voz natural
 speedRange.addEventListener('input', ()=>{ audio.playbackRate = rate; });
 
@@ -730,6 +791,7 @@ btnStop.addEventListener('click', ()=>{
   stopAllAudio();
   currentIndex = 0;
   showSentence(currentIndex);
+  fillAhead();
   updatePlayButton();
   announce('Lectura detenida. Volviste al comienzo.');
 });
@@ -739,6 +801,7 @@ btnPrev.addEventListener('click', ()=>{
   currentIndex = Math.max(0, currentIndex - 1);
   showSentence(currentIndex);
   announce('Oración anterior.');
+  fillAhead();
   if(isPlaying) speakCurrent();
 });
 
@@ -747,12 +810,15 @@ btnNext.addEventListener('click', ()=>{
   currentIndex = Math.min(sentences.length - 1, currentIndex + 1);
   showSentence(currentIndex);
   announce('Oración siguiente.');
+  fillAhead();
   if(isPlaying) speakCurrent();
 });
 
 btnChangeFile.addEventListener('click', ()=>{
   stopAllAudio();
+  docGen++;
   audioCache.clear();
+  diagText.textContent = '';
   isPlaying = false;
   updatePlayButton();
   sentences = [];
